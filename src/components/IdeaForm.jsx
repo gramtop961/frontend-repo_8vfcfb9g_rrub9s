@@ -1,48 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Wand2, Loader2, Copy, Check } from 'lucide-react';
 
-function generatePlan({ idea, industry, complexity }) {
-  const title = idea.trim() ? idea.trim() : `${industry} AI App`;
-  const levels = {
-    سهل: ['واجهة بسيطة', 'مصادقة أساسية', 'صفحة واحدة أساسية'],
-    متوسط: ['لوحة إدارة', 'تكامل API', 'نظام صلاحيات'],
-    متقدم: ['بلوغينز', 'زمن-حقيقي', 'قابلية توسّع']
-  };
-
-  const pages = [
-    'الصفحة الرئيسية',
-    'التسجيل وتسجيل الدخول',
-    'لوحة التحكم',
-    'الملف الشخصي',
-    'الإعدادات',
-  ];
-
-  const featuresBase = [
-    'منشئ نماذج سحب وإفلات',
-    'توليد مكوّنات واجهة تلقائياً',
-    'إنشاء مخطط قاعدة البيانات',
-    'كتابة نقاط API تلقائية',
-    'نشر بضغطة زر'
-  ];
-
-  const stack = [
-    'Frontend: React + Tailwind',
-    'Backend: FastAPI',
-    'Database: MongoDB',
-    'Auth: JWT + OAuth',
-    'CI/CD: GitHub Actions'
-  ];
-
-  const extra = levels[complexity] || levels['متوسط'];
-
-  return {
-    name: title.length > 40 ? `${title.slice(0, 37)}...` : title,
-    pitch: `تطبيق ${industry} يعتمد على الذكاء الاصطناعي لتحويل الأوامر النصية إلى واجهات، صفحات، ونقاط API كاملة، مع نشر تلقائي وتهيئة للبنية التحتية.`,
-    pages,
-    features: [...featuresBase, ...extra],
-    stack,
-  };
-}
+const API_BASE = import.meta.env.VITE_BACKEND_URL?.replace(/\/$/, '') || '';
 
 export default function IdeaForm() {
   const [idea, setIdea] = useState('منصة لإدارة متاجر إلكترونية تنشئ الصفحات والمنتجات بالذكاء الاصطناعي');
@@ -51,6 +10,7 @@ export default function IdeaForm() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [error, setError] = useState('');
 
   const disabled = useMemo(() => !idea.trim(), [idea]);
 
@@ -58,13 +18,38 @@ export default function IdeaForm() {
     e.preventDefault();
     setLoading(true);
     setCopied(false);
-    // محاكاة استدعاء ذكاء اصطناعي
-    await new Promise((res) => setTimeout(res, 800));
-    const plan = generatePlan({ idea, industry, complexity });
-    setResult(plan);
-    setLoading(false);
-    const section = document.getElementById('result');
-    if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setError('');
+
+    try {
+      // 1) اطلب الخطة من الواجهة الخلفية
+      const planRes = await fetch(`${API_BASE}/api/plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idea, industry, complexity }),
+      });
+      if (!planRes.ok) throw new Error('فشل توليد الخطة');
+      const plan = await planRes.json();
+
+      setResult(plan);
+
+      // 2) خزّن الفكرة والخطة في قاعدة البيانات
+      try {
+        await fetch(`${API_BASE}/api/ideas`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idea, industry, complexity, plan }),
+        });
+      } catch (_) {
+        // عدم إيقاف التجربة إن فشل التخزين، فقط تجاهل الخطأ
+      }
+
+      const section = document.getElementById('result');
+      if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (err) {
+      setError(err.message || 'حدث خطأ غير متوقع');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const copyText = async () => {
@@ -131,6 +116,9 @@ export default function IdeaForm() {
                 </>
               )}
             </button>
+            {error && (
+              <p className="text-sm text-red-600 mt-2">{error}</p>
+            )}
           </form>
         </div>
 
